@@ -27,8 +27,6 @@ def main():
     # get the livepatch name, not sure yet it's ok to assume it
     if hasattr(args, 'name'):
         load_codestreams(args.name)
-    else:
-        load_codestreams('bsc_check')
 
     # NOTE: this is a temporary solution until all the commands get converted
     # into a plugin
@@ -59,9 +57,6 @@ def main():
 
     elif args.cmd == "get-patches":
         GitHelper(args.filter, "").get_commits(args.cve, get_workdir(args.name))
-
-    elif args.cmd == "scan":
-        GitHelper("", "").scan("bsc_check", args.cve, args.conf, False)
 
     elif args.cmd == "format-patches":
         GitHelper(args.filter, "").format_patches(args.name, args.version)

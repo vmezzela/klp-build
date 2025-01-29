@@ -12,6 +12,7 @@ from klpbuild.klplib import utils
 from klpbuild.klplib.codestreams_data import get_codestreams_data, set_codestreams_data, store_codestreams
 from klpbuild.klplib.ksrc import GitHelper
 
+from klpbuild.plugins.scan import scan
 
 class Setup():
     def __init__(
@@ -60,14 +61,12 @@ class Setup():
         if not self.lp_name.startswith("bsc"):
             raise ValueError("Please use prefix 'bsc' when creating a livepatch for codestreams")
 
-        ksrc = GitHelper(data["lp_filter"], data["lp_skips"])
-
         # Called at this point because codestreams is populated
         # FIXME: we should check all configs, like when using --conf-mod-file-funcs
-        commits, patched_cs, patched_kernels, codestreams = ksrc.scan(self.lp_name,
-                                                                      data["cve"],
-                                                                      data["conf"],
-                                                                      data["no_check"])
+        commits, patched_cs, patched_kernels, codestreams = scan(data["cve"],
+                                                                 data["conf"],
+                                                                 data["no_check"],
+                                                                 data["lp_filter"])
         # Add new codestreams to the already existing list, skipping duplicates
         old_patched_cs = get_codestreams_data('patched_cs')
         new_patched_cs = natsorted(list(set(old_patched_cs + patched_cs)))
