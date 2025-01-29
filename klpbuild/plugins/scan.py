@@ -11,6 +11,8 @@ from klpbuild.klplib.ibs import IBS
 from klpbuild.klplib.supported import get_supported_codestreams
 from klpbuild.klplib.ksrc import GitHelper
 
+from klpbuild.plugins.get_patches import get_patches
+
 def run(args):
     cve = args.cve
     conf = args.conf
@@ -29,7 +31,7 @@ def scan(cve, conf, no_check, lp_filter):
         commits = {}
         patched_kernels = []
     else:
-        commits = gh.get_commits(cve)
+        commits = get_patches(lp_filter, cve)
         patched_kernels = gh.get_patched_kernels(all_codestreams, commits, cve)
 
     # list of codestreams that matches the file-funcs argument

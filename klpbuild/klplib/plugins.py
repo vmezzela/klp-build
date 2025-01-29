@@ -9,7 +9,7 @@ import logging
 PLUGINS_PATH = "klpbuild.plugins."
 
 def try_run_plugin(name, args):
-    plugin = PLUGINS_PATH + name
+    plugin = PLUGINS_PATH + name.replace("-", "_")
 
     logging.debug("Trying to run plugin %s", name)
     module = importlib.import_module(plugin)
