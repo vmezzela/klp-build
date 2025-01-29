@@ -12,6 +12,7 @@ from klpbuild.klplib.codestreams_data import load_codestreams
 from klpbuild.klplib.ibs import IBS
 from klpbuild.klplib.ksrc import GitHelper
 from klpbuild.klplib.utils import get_workdir
+from klpbuild.klplib.plugins import try_run_plugin
 from klpbuild.plugins.extractor import Extractor
 from klpbuild.plugins.inline import Inliner
 from klpbuild.plugins.setup import Setup
@@ -28,6 +29,14 @@ def main():
         load_codestreams(args.name)
     else:
         load_codestreams('bsc_check')
+
+    # NOTE: this is a temporary solution until all the commands get converted
+    # into a plugin
+    try:
+        try_run_plugin(args.cmd, args)
+        return
+    except ModuleNotFoundError:
+        logging.warning("Plugin %s cannot be loaded dinamically!", args.name)
 
     if args.cmd == "setup":
         setup = Setup(args.name)
