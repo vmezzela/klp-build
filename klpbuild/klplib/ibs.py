@@ -215,6 +215,7 @@ class IBS():
             for arch in cs.archs:
                 # Extract modules and vmlinux files that are compressed
                 mod_path = cs.get_mod_path(arch)
+                logging.debug("extracting %s %s in %s", cs.name(), arch, str(mod_path))
                 for fext, ecmd in [("zst", "unzstd --rm -f -d"), ("xz", "xz --quiet -d -k")]:
                     cmd = rf'find {mod_path} -name "*.{fext}" -exec {ecmd} --quiet {{}} \;'
                     subprocess.check_output(cmd, shell=True)
@@ -225,6 +226,7 @@ class IBS():
                     f_path = cs.get_boot_file(f"{f}.gz", arch)
                     # ppc64le doesn't gzips vmlinux
                     if f_path.exists():
+                        logging.debug("extracting %s %s %s", f, cs.name(), arch)
                         subprocess.check_output(rf'gzip -k -d -f {f_path}', shell=True)
 
             # Use the SLE .config
