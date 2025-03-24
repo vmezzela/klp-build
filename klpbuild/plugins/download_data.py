@@ -16,18 +16,23 @@ def register_argparser(subparser):
         PLUGIN_CMD, help="SLE specific. Extract patches from kgraft-patches"
     )
     fmt.add_argument("-d", "--download_missing", action="store_true", help="Download all the required data")
+    fmt.add_argument("-f", "--force", action="store_true", help="Force download even if data are present")
 
 
-def run(download_missing):
+def run(download_missing, force):
     if download_missing:
-        download_missing_data()
+        download_missing_data(force)
     else:
         logging.info("use --download")
 
 
-def download_missing_data():
-    data_missing = __get_missing_data()
-    download_codestreams_data(data_missing)
+def download_missing_data(force=False):
+    if force:
+        cs_to_download = get_supported_codestreams()
+    else:
+        cs_to_download = __get_missing_data()
+
+    download_codestreams_data(cs_to_download)
 
 
 def download_codestreams_data(codestreams):
