@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# Copyright (C) 2025 SUSE
+# Author: Vincenzo Mezzela <vincenzo.mezzela@suse.com>
+
+import logging
+
+from klpbuild.klplib.cmd import add_arg_lp_filter
+from klpbuild.klplib.data import download_missing_cs_data, download_cs_data
+from klpbuild.klplib.supported import get_supported_codestreams
+from klpbuild.klplib.utils import filter_codestreams
+
+PLUGIN_CMD = "data"
+
+def register_argparser(subparser):
+    fmt = subparser.add_parser(
+        PLUGIN_CMD, help="SLE specific. Manage downloaded rpms."
+    )
+
+    add_arg_lp_filter(fmt)
+
+    group = fmt.add_mutually_exclusive_group(required=True)
+    group.add_argument("--download_missing", action="store_true", help="Download all the missing supported codestreams data")
+    group.add_argument("--download_force", action="store_true", help="Force download even if data are present")
+
+
+def run(download_missing, download_force, lp_filter):
+    supported_codestreams = filter_codestreams(lp_filter, get_supported_codestreams())
+
+    if download_force:
+        download_cs_data(supported_codestreams)
+    elif download_missing:
+        download_missing_cs_data(supported_codestreams)
+    else:
+        logging.error("Use either --download_missing or --download_force")
