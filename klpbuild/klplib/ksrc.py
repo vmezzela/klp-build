@@ -464,3 +464,44 @@ class GitHelper():
 
         return len(commits[cs.name_cs()]["commits"]) > 0
 
+
+    def is_module_supported(self, module, kernel):
+        """
+        Check if a kernel module is supported on a specific kernel.
+        This is done by reading the 'supported.conf' file.
+
+        Args:
+            module (str): Full path of the module.
+            kernel (sr): Kernel version.
+
+        returns:
+            Return True if supported. False otherwise.
+            """
+
+        mpath = module
+        prev = ""
+        idx = 1
+        supported = False
+
+        # Try the following path combinations to see if it matches with
+        # any rule in the supported.conf:
+        #   my/kernel/module/path
+        #   my/kernel/module/*
+        #   my/kernel/*
+        #   my/*
+        while mpath != prev:
+            ret =  subprocess.run(["/usr/bin/git", "-C", self.kern_src,
+                                   "grep", "-h", f"{mpath}",
+                                   "--", "supported.conf"],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE,
+                                   text=True)
+            if ret.returncode == 0:
+                supported = ret.stdout[0] != '-'
+                break
+
+            prev = mpath
+            mpath = module.rsplit("/", idx)[0] + r"/\*"
+            idx += 1
+
+        return supported
