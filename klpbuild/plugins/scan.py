@@ -58,7 +58,7 @@ def scan(cve, conf, no_check, lp_filter, download, savedir=None):
         commits = {}
         patched_kernels = []
     else:
-        assert cve
+        assert cve or utils.in_test_mode()
         commits = get_commits(cve, savedir)
         patched_kernels = get_patched_kernels(all_codestreams, commits, cve)
 
