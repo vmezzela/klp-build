@@ -26,6 +26,7 @@ setuptools.setup(
         "configparser",
         "cached_property",
         "GitPython",
+        "sortedcontainers",
         "lxml",
         "mako",
         "markupsafe",
