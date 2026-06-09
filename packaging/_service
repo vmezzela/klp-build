@@ -1,0 +1,32 @@
+<services>
+  <!--
+    klp-build OBS source services.
+
+    Runs server-side on every `osc commit`. Tracks a fixed release tag;
+    bump <param name="revision"> when cutting a new release.
+
+    To switch to tracking a moving branch (e.g. main) and have the version
+    embed the commit count + short hash, change "revision" to the branch
+    name and replace "versionformat" with:
+        @PARENT_TAG@.post@TAG_OFFSET@.git%h
+  -->
+  <service name="obs_scm">
+    <param name="scm">git</param>
+    <param name="url">https://github.com/SUSE/klp-build.git</param>
+    <param name="revision">v1.2.0</param>
+    <param name="versionformat">@PARENT_TAG@</param>
+    <!-- Strip the leading "v" from tags: v1.2.0 -> 1.2.0 -->
+    <param name="versionrewrite-pattern">v(.*)</param>
+    <param name="versionrewrite-replacement">\1</param>
+    <param name="exclude">.git</param>
+  </service>
+
+  <!-- Rewrite Version: in *.spec from the obs_scm-produced tarball name -->
+  <service name="set_version"/>
+
+  <!-- Gzip the .tar produced by obs_scm -->
+  <service name="recompress">
+    <param name="file">*.tar</param>
+    <param name="compression">gz</param>
+  </service>
+</services>

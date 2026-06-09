@@ -15,13 +15,14 @@
 # Please submit bugfixes or comments via https://bugs.opensuse.org/
 #
 
-# RPM version: dots only, no characters invalid for RPM
-%define rpm_version 1.2.0.post246.git2cf39e3
-# PEP 440 version: passed to setuptools via environment variable
-%define pypi_version 1.2.0.post246+git2cf39e3
-
 Name:           klp-build
-Version:        %{rpm_version}
+# Version is rewritten by the `set_version` source service from the
+# obs_scm-generated tarball name. Keep the placeholder below.
+Version:        0
+# PEP 440 local-version label: replace the ".git" segment (if any) with "+git",
+# e.g. 1.2.0.post279.git8c99c74 -> 1.2.0.post279+git8c99c74. For clean release
+# tags this is a no-op (1.2.0 -> 1.2.0).
+%global pypi_version %(echo %{version} | sed 's/\\.git/+git/')
 Release:        0
 Summary:        The kernel livepatching creation tool
 License:        GPL-2.0-only
