@@ -129,7 +129,7 @@ def __get_patch_files(patch, branch):
 
     ret = subprocess.check_output(["/usr/bin/git", "-C", kern_src,
                                    "grep", "-Ih", "^+++",
-                                   f"remotes/origin/{branch}:{patch}"]).decode()
+                                   f"{branch}:{patch}"]).decode()
     for l in ret.splitlines():
         # Remove the first caracters "+++ [a,b]/" in the line. Leftovers
         # from the patch's diff.
@@ -174,7 +174,7 @@ def get_patch_subject(patch, branch):
 
     ret = subprocess.check_output(["/usr/bin/git", "-C", kern_src,
                                    "grep", "-Ih", "^Subject:",
-                                   f"remotes/origin/{branch}:{patch}"]).decode()
+                                   f"{branch}:{patch}"]).decode()
     subj = re.sub(r"Subject:\s*(\[PATCH.*\])?", "", ret)
 
     return subj.strip()
@@ -196,7 +196,7 @@ def get_branch_patches(cve, mbranch):
     try:
         patch_files = subprocess.check_output(
             ["/usr/bin/git", "-C", kern_src, "grep", "-l", f"CVE-{cve}",
-             f"remotes/origin/{mbranch}", "--", "patches.suse/"],
+             f"{mbranch}", "--", "patches.suse/"],
             stderr=subprocess.STDOUT,
         ).decode(sys.stdout.encoding)
     except subprocess.CalledProcessError:
@@ -209,7 +209,7 @@ def get_branch_patches(cve, mbranch):
         _, fname = patch.split(":")
         cmd.append("-e")
         cmd.append(fname)
-    cmd += [f"remotes/origin/{mbranch}:series.conf"]
+    cmd += [f"{mbranch}:series.conf"]
 
     # Now execute the command
     try:
@@ -313,7 +313,7 @@ def ksrc_read_rpm_file(kernel_version, file_path):
 
 
 def ksrc_read_branch_file(branch, file_path):
-    return __read_file("remotes/origin/" + branch, file_path)
+    return __read_file(branch, file_path)
 
 
 def __read_file(ref, file_path):
