@@ -57,10 +57,17 @@ def register_argparser(subparser):
     extract_opts.add_argument(
         "--no-patches", action="store_true", help="Do not apply patches if they exist"
     )
+    extract_opts.add_argument(
+        "--klp-ccp-arch",
+        type=str,
+        default="x86_64",
+        choices=["x86_64", "aarch64"],
+        help="Architecture target for klp-ccp (default: x86_64)",
+    )
 
 
-def run(lp_name, lp_filter, no_patches, avoid_ext):
-    return extract(lp_name, lp_filter, no_patches, avoid_ext)
+def run(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch):
+    return extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch)
 
 
 def get_cs_code(lp_name, working_cs):
@@ -370,8 +377,8 @@ def get_klpp_symbols(out_dir, lp_out, mod_name):
     return klpp_syms
 
 
-def get_cmd_from_json(cs, fname):
-    cc_file = cs.get_obj_dir()/"compile_commands.json"
+def get_cmd_from_json(cs, fname, arch):
+    cc_file = cs.get_obj_dir(arch)/"compile_commands.json"
 
     # Older codestreams doens't support compile_commands.json, so use make for them
     if not cc_file.exists():
@@ -599,13 +606,13 @@ def apply_all_patches(lp_name, cs):
     assert not required_patches, "Some required patches have not been applied"
 
 
-def cmd_args(lp_name, cs, fname, out_dir, fdata, cmd, avoid_ext):
+def cmd_args(lp_name, cs, fname, out_dir, fdata, cmd, avoid_ext, klp_ccp_arch):
     lp_out = Path(out_dir, cs.lp_out_file(lp_name, fname))
 
     funcs = ",".join(sorted(fdata.affected_symbols))
 
     ccp_args = [str(shutil.which("klp-ccp")), "-P", "suse.KlpPolicy",
-                "--compiler=x86_64-gcc-9.1.0", "-i", f"{funcs}", "-o",
+                f"--compiler={klp_ccp_arch}-gcc-9.1.0", "-i", f"{funcs}", "-o",
                 f"{str(lp_out)}", "--"]
 
     # -flive-patching and -fdump-ipa-clones are only present in upstream gcc
@@ -648,20 +655,19 @@ def cmd_args(lp_name, cs, fname, out_dir, fdata, cmd, avoid_ext):
 
     # Needed, otherwise threads would interfere with each other
     env = os.environ.copy()
-    arch = utils.preferred_arch([cs])
-    obj = cs.get_file_mod(fname, arch)
+    obj = cs.get_file_mod(fname, klp_ccp_arch)
 
     # ``find_obj_path`` resolves and caches the per-arch path on ``obj``; we
     # rely on the path having been populated earlier (during setup), but call
     # it here as a safety net so a missing cache entry does not crash.
-    obj_path = obj.get_obj_path(arch) or str(cs.find_obj_path(arch, obj.name))
+    obj_path = obj.get_obj_path(klp_ccp_arch) or str(cs.find_obj_path(klp_ccp_arch, obj.name))
 
     env["KCP_KLP_CONVERT_EXTS"] = "1" if cs.needs_ibt() else "0"
-    env["KCP_MOD_SYMVERS"] = str(Path(cs.get_boot_dir(), f'{cs.get_boot_filename("symvers")}.gz'))
-    env["KCP_KBUILD_ODIR"] = str(cs.get_obj_dir())
-    env["KCP_PATCHED_OBJ"] = str(utils.get_datadir(arch) / obj_path)
+    env["KCP_MOD_SYMVERS"] = str(Path(cs.get_boot_dir(klp_ccp_arch), f'{cs.get_boot_filename("symvers")}.gz'))
+    env["KCP_KBUILD_ODIR"] = str(cs.get_obj_dir(klp_ccp_arch))
+    env["KCP_PATCHED_OBJ"] = str(utils.get_datadir(klp_ccp_arch) / obj_path)
     env["KCP_KBUILD_SDIR"] = str(cs.get_src_dir())
-    env["KCP_IPA_CLONES_DUMP"] = str(cs.get_ipa_file(fname))
+    env["KCP_IPA_CLONES_DUMP"] = str(cs.get_ipa_file(fname, klp_ccp_arch))
     env["KCP_WORK_DIR"] = str(out_dir)
     env["KCP_READELF"] = "readelf"
     env["KCP_RENAME_PREFIX"] = "klp"
@@ -752,11 +758,11 @@ def parse_ccp_warnings(f, start_pos, cs, fname):
                 handler(match, cs, fname)
 
 
-def process(lp_name, total, args, avoid_ext):
+def process(lp_name, total, args, avoid_ext, klp_ccp_arch):
     i, make_lock, fname, cs, fdata = args
 
     sdir = cs.get_src_dir()
-    odir = cs.get_obj_dir()
+    odir = cs.get_obj_dir(klp_ccp_arch)
 
     # The header text has two tabs
     cs_info = cs.full_cs_name().ljust(15, " ")
@@ -773,12 +779,12 @@ def process(lp_name, total, args, avoid_ext):
     # Make can regenerate fixdep for each file being processed per
     # codestream, so avoid the TXTBUSY error by serializing the 'make -sn'
     # calls. Make is pretty fast, so there isn't a real slow down here.
-    cmd = get_cmd_from_json(cs, fname)
+    cmd = get_cmd_from_json(cs, fname, klp_ccp_arch)
     if not cmd:
         with make_lock:
             cmd = get_make_cmd(out_dir, cs, fname, odir, sdir)
 
-    args, lenv = cmd_args(lp_name, cs, fname, out_dir, fdata, cmd, avoid_ext)
+    args, lenv = cmd_args(lp_name, cs, fname, out_dir, fdata, cmd, avoid_ext, klp_ccp_arch)
 
     # Detect and set ibt information. It will be used in the TemplateGen
     if '-fcf-protection' in cmd or cs.needs_ibt():
@@ -841,14 +847,14 @@ def lp_out_cleanup(cs, fdata: AffectedFile, lp_out, sdir):
         f.truncate()
 
 
-def extract(lp_name, lp_filter, no_patches, avoid_ext):
-    sdir_lock = FileLock(utils.get_datadir()/utils.ARCH/"sdir.lock")
+def extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch="x86_64"):
+    sdir_lock = FileLock(utils.get_datadir()/klp_ccp_arch/"sdir.lock")
 
     with sdir_lock:
-        start_extract(lp_name, lp_filter, no_patches, avoid_ext)
+        start_extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch)
 
 
-def start_extract(lp_name, lp_filter, no_patches, avoid_ext):
+def start_extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch):
     logging.info("Work directory: %s", utils.get_workdir(lp_name, True))
 
     working_cs = utils.filter_codestreams(lp_filter, get_codestreams_list(), verbose=True)
@@ -883,7 +889,7 @@ def start_extract(lp_name, lp_filter, no_patches, avoid_ext):
     with ThreadPoolExecutor(max_workers=workers) as executor:
         try:
             futures = executor.map(process, repeat(lp_name), repeat(len(args)),
-                                   args, repeat(avoid_ext))
+                                    args, repeat(avoid_ext), repeat(klp_ccp_arch))
             for future in futures:
                 if future:
                     logging.error(future)
@@ -916,7 +922,7 @@ def start_extract(lp_name, lp_filter, no_patches, avoid_ext):
     if unext:
         logging.info("\nUnexternalyzing symbols:\n%s\n", ', '.join(unext))
         start_extract(lp_name, lp_filter, no_patches,
-                      avoid_ext + list(unext))
+                      avoid_ext + list(unext), klp_ccp_arch)
         sys.exit(0)
 
     if missing:
