@@ -161,7 +161,7 @@ class Codestream:
         if not arch:
             arch = preferred_arch([self])
 
-        return Path(f"{self.get_src_dir(arch, init=False)}-obj", arch, self.get_kernel_type())
+        return Path(f"{self.get_src_dir(arch, init=False)}-obj", arch, self.get_kernel_type()).resolve()
 
     def get_ipa_file(self, fname, arch=None):
 
