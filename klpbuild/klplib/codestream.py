@@ -320,7 +320,7 @@ class Codestream:
         return get_workdir(lp_name, True) / "ccp" / self.full_cs_name()
 
 
-    def get_lp_dir(self, lp_name):
+    def get_lp_dir(self, lp_name, arch):
         """
         Get the path to the extracted livepatches directory of the current codestream.
 
@@ -330,10 +330,11 @@ class Codestream:
         returns:
             path: The path to the extracted livepatches directory of the current codestream.
         """
-        return self.get_ccp_dir(lp_name)/"lp"
+        assert arch in ["x86_64", "aarch64"]
+        return self.get_ccp_dir(lp_name)/f"lp_{arch}"
 
 
-    def get_ccp_work_dir(self, lp_name, fname):
+    def get_ccp_work_dir(self, lp_name, fname, arch):
         """
         Get the path to the klp-ccp working directory of the current codestream.
 
@@ -344,7 +345,8 @@ class Codestream:
         returns:
             Path: The path to the klp-ccp working directory of the current codestream.
         """
-        fpath = f'work_{str(fname).replace("/", "_")}'
+        assert arch in ["x86_64", "aarch64"]
+        fpath = f'work_{arch}_{str(fname).replace("/", "_")}'
         return self.get_ccp_dir(lp_name)/fpath
 
 

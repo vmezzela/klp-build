@@ -70,16 +70,14 @@ def run(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch):
     return extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch)
 
 
-def get_cs_code(lp_name, working_cs):
+def get_cs_code(lp_name, working_cs, klp_ccp_arch="x86_64"):
     cs_files = {}
 
     # Mount the cs_files dict
     for cs in working_cs:
         cs_files.setdefault(cs.full_cs_name(), [])
 
-        arch = utils.preferred_arch([cs])
-
-        for fpath in cs.get_lp_dir(lp_name).iterdir():
+        for fpath in cs.get_lp_dir(lp_name, klp_ccp_arch).iterdir():
             fname = fpath.name
             with open(fpath.absolute(), "r+") as fi:
                 src = fi.read()
@@ -94,7 +92,7 @@ def get_cs_code(lp_name, working_cs):
                 # We have problems with externalized symbols on macros. Ignore
                 # codestream names specified on paths that are placed on the
                 # expanded macros
-                src = re.sub(f"{utils.get_datadir(arch)}.+{fname}", "", src)
+                src = re.sub(f"{utils.get_datadir(klp_ccp_arch)}.+{fname}", "", src)
                 # We can have more details that can differ for long expanded
                 # macros, like the patterns bellow
                 src = re.sub(r"\.lineno = \d+,", "", src)
@@ -415,11 +413,11 @@ def get_patches_dir(lp_name):
 
 
 # Get the code for each codestream, removing boilerplate code
-def group_equal_files(lp_name, working_cs):
+def group_equal_files(lp_name, working_cs, klp_ccp_arch="x86_64"):
     cs_equal = []
     processed = []
 
-    cs_files = get_cs_code(lp_name, working_cs)
+    cs_files = get_cs_code(lp_name, working_cs, klp_ccp_arch)
     toprocess = list(cs_files.keys())
     while len(toprocess) > 0:
         current_cs_list = []
@@ -770,7 +768,7 @@ def process(lp_name, total, args, avoid_ext, klp_ccp_arch):
 
     logging.info("%s %s %s", idx, cs_info, fname)
 
-    out_dir = cs.get_ccp_work_dir(lp_name, fname)
+    out_dir = cs.get_ccp_work_dir(lp_name, fname, klp_ccp_arch)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # create symlink to the respective codestream file
@@ -870,7 +868,7 @@ def start_extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch):
     make_lock = Lock()
     for cs in working_cs:
         # remove any previously generated files and leftover patches
-        shutil.rmtree(cs.get_ccp_dir(lp_name), ignore_errors=True)
+        shutil.rmtree(cs.get_lp_dir(lp_name, klp_ccp_arch), ignore_errors=True)
         remove_patches(lp_name, cs)
 
         # Apply patches before the LPs were created
@@ -878,6 +876,7 @@ def start_extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch):
             apply_all_patches(lp_name, cs)
 
         for fname, fdata in cs.files.items():
+            shutil.rmtree(cs.get_ccp_work_dir(lp_name, fname, klp_ccp_arch), ignore_errors=True)
             args.append((i, make_lock, fname, cs, fdata))
             i += 1
 
@@ -901,7 +900,7 @@ def start_extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch):
 
     # Create the livepatches per codestream
     for cs in working_cs:
-        generate_livepatches(lp_name, cs)
+        generate_livepatches(lp_name, cs, klp_ccp_arch)
         # Cleanup patches after the LPs were created if they were applied
         if not no_patches:
             remove_patches(lp_name, cs)
@@ -932,7 +931,7 @@ def start_extract(lp_name, lp_filter, no_patches, avoid_ext, klp_ccp_arch):
         logging.warning("Symbols not found:")
         logging.warning(json.dumps(missing, indent=4))
 
-    group_equal_files(lp_name, working_cs)
+    group_equal_files(lp_name, working_cs, klp_ccp_arch)
 
     pref_archs = utils.preferred_arch(working_cs)
     if 'x86_64' not in pref_archs:
