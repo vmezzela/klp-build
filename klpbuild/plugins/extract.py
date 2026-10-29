@@ -678,6 +678,48 @@ def process(lp_name, total, args, avoid_ext, no_patches, klp_ccp_arch="x86_64"):
     lp_out_cleanup(cs, cs.files[fname], lp_out, sdir, klp_ccp_arch)
 
 
+# klp-ccp emits renamed macros for jump-label static keys and static calls.
+# Those rely on asm-goto jump labels and static-call trampolines, which are
+# problematic to relocate inside a livepatch module. Instead of using klp-ccp's
+# definitions we drop them here and emit our own memory-read variants from the
+# livepatch template (see klplib/templ.py).
+STATIC_KEY_MACROS = ("klpr_static_key_false", "klpr_static_key_true")
+STATIC_CALL_MACROS = ("klpr_static_call", "klpr___raw_static_call",
+                      "klpr___static_call_cond")
+
+
+def strip_klpr_static_defines(cs, fname, lp_out):
+    """
+    Drop the ``#define`` lines that klp-ccp emits for the jump-label static key
+    and static call macros. Their usages are left untouched so they can bind to
+    the definitions emitted by the livepatch template.
+
+    Numbered variants (e.g. ``klpr_static_call0``) cannot be rewritten
+    automatically and require manual inspection, so warn about them.
+    """
+    macros = "|".join(re.escape(m) for m in STATIC_KEY_MACROS + STATIC_CALL_MACROS)
+
+    if re.search(rf"(?:{macros})\d+", lp_out):
+        logging.warning("%s:%s: Numbered static key/call detected (e.g. "
+                        "klpr_static_key_true0, klpr_static_call0). Manual "
+                        "inspection required.", cs.full_cs_name(), fname)
+
+    # klp-ccp's static call macro spans multiple lines (backslash-continued), so
+    # consume all the continuation lines as well, not just the first one.
+    return re.sub(rf"#define (?:{macros})\b(?:.*\\\n)*.*\n", "", lp_out)
+
+
+def collect_static_macro_variants(lp_out, macros):
+    """
+    Return the macros from ``macros`` that are actually invoked in ``lp_out``.
+
+    Matching is anchored on the opening parenthesis so numbered variants
+    (``klpr_static_call0(``) are ignored and the shorter ``klpr_static_call``
+    does not cross-match the longer ``klpr___raw_static_call`` / ``klpr___static_call_cond``.
+    """
+    return [m for m in macros if re.search(rf"\b{re.escape(m)}\(", lp_out)]
+
+
 def lp_out_cleanup(cs, fdata: AffectedFile, lp_out, sdir, arch="x86_64"):
     """
     Open the file, read, seek to the beginning, write the new data, and
@@ -688,6 +730,9 @@ def lp_out_cleanup(cs, fdata: AffectedFile, lp_out, sdir, arch="x86_64"):
     - Remove unsupported macro definitions.
     - Remove the attributes left by klp-ccp, since they don't mean much for
       kernel modules.
+    - Drop klp-ccp's jump-label static key and static call macro defines; the
+      livepatch template emits memory-read variants in their place. Record which
+      macros the file uses so the template only emits what's needed.
     - Remove typeof(...) declarations left by klp-ccp.
     - Remove big chunks of empty lines.
     """
@@ -702,6 +747,15 @@ def lp_out_cleanup(cs, fdata: AffectedFile, lp_out, sdir, arch="x86_64"):
         file_buf = re.sub(fr"#define\s({macros}).*", '', file_buf)
         file_buf = re.sub(r" __(init|exit)", ' ', file_buf)
         file_buf = re.sub(r'^typeof\(.*?;\n?', '', file_buf, flags=re.MULTILINE | re.DOTALL)
+        file_buf = strip_klpr_static_defines(cs, fdata.filename, file_buf)
+
+        # Record the static key/call macros still used after dropping the
+        # defines, so the template can emit matching definitions.
+        fdata.set_static_key_variants(arch,
+            collect_static_macro_variants(file_buf, STATIC_KEY_MACROS))
+        fdata.set_static_call_variants(arch,
+            collect_static_macro_variants(file_buf, STATIC_CALL_MACROS))
+
         file_buf = re.sub(r'\n{3,}', r'\n', file_buf)
         f.write(file_buf)
         f.truncate()

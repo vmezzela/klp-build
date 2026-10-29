@@ -16,6 +16,103 @@ from klpbuild.klplib.utils import (get_mail, get_workdir,
                                    get_lp_number, get_fname)
 
 
+# klp-ccp renames the jump-label static key and static call macros with a
+# ``klpr_`` prefix. extract.py drops klp-ccp's definitions and records which of
+# these macros each file uses; we emit memory-read variants here in their place.
+STATIC_KEY_MACROS = ("klpr_static_key_false", "klpr_static_key_true")
+STATIC_CALL_BASE = "klpr_static_call"
+# Aliases that expand to the base macro above.
+STATIC_CALL_ALIASES = ("klpr___raw_static_call", "klpr___static_call_cond")
+
+
+def _static_call_block(variants, ibt):
+    """
+    Build the static call macro block for a file, or ``""`` if the file uses no
+    static call macro.
+
+    The base ``klpr_static_call`` definition is always emitted when any variant
+    is present (the aliases expand to it). Only the aliases actually used are
+    emitted.
+
+    The key and trampoline references differ between the two externalization
+    paths. In the IBT path both the static call key (``__SCK__<name>``) and the
+    trampoline (``__SCT__<name>``) keep their original names (resolved via
+    ``KLP_RELOC_SYMBOL``), so the kernel ``STATIC_CALL_KEY`` / ``STATIC_CALL_TRAMP``
+    macros resolve. In the non-IBT path both are externalized as ``klpe_``
+    pointers (resolved via kallsyms relocs), so we read the key through
+    ``(*klpe___SCK__<name>)`` and type the cast off ``klpe___SCT__<name>`` (which
+    is already a pointer to the trampoline, i.e. exactly the cast type we need).
+
+    No headers are emitted here: the macros only need their referenced symbols at
+    expansion time (the call sites inside the klp-ccp source), and that source
+    already pulls in the required headers after its own ``pr_fmt`` definition.
+    Emitting e.g. ``<linux/static_call.h>`` ahead of the source would drag in
+    ``<linux/printk.h>`` and its default ``pr_fmt``, clashing with the source's
+    redefinition under ``-Werror``.
+    """
+    present = set(variants)
+    if not present:
+        return ""
+
+    if ibt:
+        key = "STATIC_CALL_KEY(name).func"
+        cast = "(typeof(STATIC_CALL_TRAMP(name))*)"
+    else:
+        key = "(*klpe___SCK__##name).func"
+        cast = "(typeof(klpe___SCT__##name))"
+
+    lines = [
+        "static void klpr___static_call_nop(void) { }",
+        "",
+        "#define klpr_static_call(name) \\",
+        "({ \\",
+        f"\tvoid *func = READ_ONCE({key}); \\",
+        "\tif (!func) \\",
+        "\t\tfunc = &klpr___static_call_nop; \\",
+        f"\t{cast}func; \\",
+        "})",
+    ]
+    for alias in STATIC_CALL_ALIASES:
+        if alias in present:
+            lines.append(f"#define {alias} {STATIC_CALL_BASE}")
+
+    return "\n".join(lines)
+
+
+def _static_key_block(variants):
+    """
+    Build the static key macro block for a file, or ``""`` if the file uses no
+    static key macro. Each macro maps independently to ``static_key_enabled``.
+
+    As with the static call block, no header is emitted here (``static_key_enabled``
+    is resolved at the call sites, where the klp-ccp source already has the needed
+    headers) to avoid pulling ``<linux/printk.h>``'s default ``pr_fmt`` ahead of
+    the source's own definition.
+    """
+    present = set(variants)
+    if not present:
+        return ""
+
+    lines = []
+    for macro in STATIC_KEY_MACROS:
+        if macro in present:
+            lines.append(f"#define {macro}(key) static_key_enabled(key)")
+
+    return "\n".join(lines)
+
+
+def get_static_macros(fdata, arch, ibt):
+    """
+    Return the combined static call / static key macro definitions a file needs,
+    or ``""`` when it uses none.
+    """
+    blocks = [
+        _static_call_block(fdata.get_static_call_variants(arch), ibt),
+        _static_key_block(fdata.get_static_key_variants(arch)),
+    ]
+    return "\n\n".join(b for b in blocks if b)
+
+
 MACRO_PROTO_SYMS = """\
 <%
 def get_protos(proto_syms):
@@ -185,6 +282,10 @@ TEMPL_PATCH_VMLINUX = """\
 
 #include "livepatch_${ lp_name }.h"
 
+% if static_macros:
+${static_macros}
+
+% endif
 <%include file="${ inc_src_file }"/>
 
 % if ext_vars:
@@ -228,6 +329,10 @@ TEMPL_PATCH_MODULE = """\
 
 #include "livepatch_${ lp_name }.h"
 
+% if static_macros:
+${static_macros}
+
+% endif
 <%include file="${ inc_src_file }"/>
 
 % if ext_vars:
@@ -560,6 +665,7 @@ def __generate_lp_file(lp_name, lp_path, cs, src_file, out_name, arch):
             "inc_src_file": cs.lp_out_file(lp_name, src_file),
             "mod": "" if mod.is_vmlinux else mod.lp_module_name,
             "mod_mutex": cs.is_mod_mutex(),
+            "static_macros": get_static_macros(fdata, arch, fdata.ibt),
         })
 
         if tvars["mod"]:

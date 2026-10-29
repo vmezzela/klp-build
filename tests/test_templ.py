@@ -10,7 +10,7 @@ import pytest
 import klpbuild.klplib.templ as templ_module
 from klpbuild.klplib import utils
 from klpbuild.klplib.affected_file import AffectedFile
-from klpbuild.klplib.templ import get_multi_funcs
+from klpbuild.klplib.templ import get_multi_funcs, get_static_macros
 from klpbuild.plugins.extract import extract
 from klpbuild.plugins.setup import run as setup
 from tests.utils import FakeCS, get_codestreams_file, get_file_content
@@ -24,6 +24,84 @@ def _af(name, ext_symbols=None, patched_funcs=None, arch="x86_64"):
     if patched_funcs is not None:
         f.set_patched_funcs(arch, patched_funcs)
     return f
+
+
+# ── get_static_macros ────────────────────────────────────────────────────────
+
+def test_get_static_macros_empty():
+    """No recorded variants -> no emission."""
+    assert get_static_macros(_af("f.c"), "x86_64", False) == ""
+
+
+def test_get_static_macros_call_non_ibt():
+    f = _af("f.c")
+    f.set_static_call_variants("x86_64", ["klpr_static_call"])
+    out = get_static_macros(f, "x86_64", False)
+    # No headers are emitted; the klp-ccp source provides them (avoids pulling
+    # printk.h's default pr_fmt ahead of the source's own definition).
+    assert "#include" not in out
+    assert "static void klpr___static_call_nop(void) { }" in out
+    assert "#define klpr_static_call(name)" in out
+    # non-IBT reads the externalized key pointer and types the cast off the
+    # externalized trampoline pointer.
+    assert "(*klpe___SCK__##name).func" in out
+    assert "(typeof(klpe___SCT__##name))func" in out
+    # the original-name kernel macros must not appear in the non-IBT path
+    assert "STATIC_CALL_KEY" not in out
+    assert "STATIC_CALL_TRAMP" not in out
+    # no aliases requested
+    assert "#define klpr___raw_static_call" not in out
+    assert "#define klpr___static_call_cond" not in out
+
+
+def test_get_static_macros_call_ibt():
+    f = _af("f.c")
+    f.set_static_call_variants("x86_64", ["klpr_static_call"])
+    out = get_static_macros(f, "x86_64", True)
+    # IBT keeps the original key and trampoline names
+    assert "STATIC_CALL_KEY(name).func" in out
+    assert "(typeof(STATIC_CALL_TRAMP(name))*)func" in out
+    assert "klpe___SCK__" not in out
+    assert "klpe___SCT__" not in out
+
+
+def test_get_static_macros_alias_without_base_usage():
+    """raw/cond used without klpr_static_call still emits the base + alias."""
+    f = _af("f.c")
+    f.set_static_call_variants("x86_64", ["klpr___raw_static_call"])
+    out = get_static_macros(f, "x86_64", False)
+    assert "#define klpr_static_call(name)" in out
+    assert "#define klpr___raw_static_call klpr_static_call" in out
+    assert "#define klpr___static_call_cond" not in out
+
+
+def test_get_static_macros_both_aliases():
+    f = _af("f.c")
+    f.set_static_call_variants(
+        "x86_64",
+        ["klpr_static_call", "klpr___raw_static_call", "klpr___static_call_cond"],
+    )
+    out = get_static_macros(f, "x86_64", False)
+    assert "#define klpr___raw_static_call klpr_static_call" in out
+    assert "#define klpr___static_call_cond klpr_static_call" in out
+
+
+def test_get_static_macros_keys():
+    f = _af("f.c")
+    f.set_static_key_variants("x86_64", ["klpr_static_key_true"])
+    out = get_static_macros(f, "x86_64", False)
+    assert "#include" not in out
+    assert "#define klpr_static_key_true(key) static_key_enabled(key)" in out
+    assert "klpr_static_key_false" not in out
+
+
+def test_get_static_macros_keys_and_calls():
+    f = _af("f.c")
+    f.set_static_call_variants("x86_64", ["klpr_static_call"])
+    f.set_static_key_variants("x86_64", ["klpr_static_key_false"])
+    out = get_static_macros(f, "x86_64", False)
+    assert "#include" not in out
+    assert "#define klpr_static_key_false(key) static_key_enabled(key)" in out
 
 
 

@@ -239,6 +239,12 @@ class AffectedFile:
         self.ext_symbols: dict[str, dict[str, list[str]]] = {} # arch → module name → symbol list
         self.patched_funcs: dict[str, list[str]] = {}      # arch → symbol list
 
+        # Transient extraction artifacts, consumed by the template generator in
+        # the same run (not serialized): the klp-ccp static-call/static-key
+        # macro variants used by this file, per-arch.
+        self.static_call_variants: dict[str, list[str]] = {}  # arch → macro name list
+        self.static_key_variants: dict[str, list[str]] = {}   # arch → macro name list
+
     def get_dup_symbols(self, arch: str = "x86_64") -> list[str]:
         return self.dup_symbols.get(arch, [])
 
@@ -261,6 +267,18 @@ class AffectedFile:
 
     def set_patched_funcs(self, arch: str, patched_funcs: list[str]) -> None:
         self.patched_funcs[arch] = list(patched_funcs)
+
+    def get_static_call_variants(self, arch: str = "x86_64") -> list[str]:
+        return self.static_call_variants.get(arch, [])
+
+    def set_static_call_variants(self, arch: str, variants: list[str]) -> None:
+        self.static_call_variants[arch] = list(variants)
+
+    def get_static_key_variants(self, arch: str = "x86_64") -> list[str]:
+        return self.static_key_variants.get(arch, [])
+
+    def set_static_key_variants(self, arch: str, variants: list[str]) -> None:
+        self.static_key_variants[arch] = list(variants)
 
     @classmethod
     def from_dict(cls, filename: str, data: dict) -> "AffectedFile":
